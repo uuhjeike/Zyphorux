@@ -282,25 +282,50 @@ h4 { margin: 0 0 .35rem; font: 400 1.15rem/1.3 var(--serif); color: var(--gold);
 .post-body em { color: var(--violet-soft); }
 .post-body a { overflow-wrap: anywhere; }
 
-.media { margin: .3rem 0 1rem; display: grid; gap: .5rem; }
-.media.multi { grid-template-columns: 1fr; }   /* several photos: stacked, each shown whole */
+/* Every photo, video and player sits in a "frame". --r is its width/height ratio (set by script.js once known).
+   Width = the column, but never wider than the file's real size, and never taller than 85% of the screen,
+   so wide, square and tall phone pictures/videos all fit without scrolling past them. */
+.media { margin: .3rem 0 1rem; display: grid; gap: .6rem; }
 .media:last-child { margin-bottom: 0; }
-.media img, .media video {
-  /* original size: never stretched, only shrunk when the screen is narrower than the file */
-  width: auto; max-width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); background: #080a1a;
+.media.multi { grid-template-columns: 1fr; }
+
+.frame {
+  --r: 1.3333; --maxh: 85vh;
+  position: relative; margin-inline: auto; overflow: hidden;
+  width: min(100%, var(--w, 100%), calc(var(--maxh) * var(--r)));
+  aspect-ratio: var(--r);
+  border: 1px solid var(--line); border-radius: 10px; background: #080a1a;
 }
-.media img.pending { width: 100%; aspect-ratio: 4 / 3; }   /* placeholder box until the picture arrives */
-.media.multi img.pending { aspect-ratio: 4 / 3; }
-.media video { min-width: min(100%, 320px); }
-.media img { cursor: zoom-in; }
-.viewer { position: fixed; inset: 0; z-index: 100; overflow: auto; background: #000; cursor: zoom-out; -webkit-overflow-scrolling: touch; }
-.viewer img { max-width: none; width: auto; height: auto; margin: 0 auto; border: 0; border-radius: 0; cursor: zoom-out; }
+@supports (height: 1dvh) { .frame { --maxh: 85dvh; } }
+
+.frame img, .frame video { display: block; width: 100%; height: 100%; max-width: none; border: 0; border-radius: 0; }
+.frame video { object-fit: contain; background: #000; }
+.vid { --r: 1.7778; background: #000; }
+
+/* photo: blurred preview first, sharp photo fades in over it */
+.ph img.hq { position: absolute; inset: 0; object-fit: contain; opacity: 0; transition: opacity .35s ease; cursor: zoom-in; }
+.ph.loaded img.hq { opacity: 1; }
+.ph img.lq { position: absolute; inset: 0; object-fit: cover; filter: blur(14px); transform: scale(1.08); }
+.ph:not(.loaded):not(.has-lq)::after {            /* waiting: one soft sweep so you know it is coming */
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(141,115,255,.12) 50%, transparent 70%);
+  background-size: 250% 100%; animation: sweep 1.6s linear infinite;
+}
+@keyframes sweep { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+
+/* YouTube: wide videos 16:9, Shorts 9:16 (tall, centred, never taller than the screen) */
+.yt-wrap { display: grid; gap: .35rem; justify-items: center; }
+.yt-wrap .frame { --r: 1.7778; background: #000; }
+.yt-wrap .frame.is-short { --r: .5625; --maxh: 80vh; width: min(100%, 360px, calc(var(--maxh) * var(--r))); }
+@supports (height: 1dvh) { .yt-wrap .frame.is-short { --maxh: 80dvh; } }
+.yt-open { font-size: .78rem; color: var(--muted); }
+.yt-open:hover { color: var(--cyan); }
 
 .yt {
-  position: relative; display: block; width: 100%; padding: 0; border: 1px solid var(--line); border-radius: 10px;
-  overflow: hidden; background: #000; cursor: pointer; aspect-ratio: 16 / 9; color: inherit;
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%; padding: 0; border: 0;
+  background: #000; cursor: pointer; color: inherit;
 }
-.yt img { width: 100%; height: 100%; object-fit: cover; opacity: .82; }
+.yt img { width: 100%; height: 100%; object-fit: cover; opacity: .85; }
 .yt::after { /* play mark */
   content: ""; position: absolute; left: 50%; top: 50%; width: 3.6rem; height: 3.6rem; margin: -1.8rem 0 0 -1.8rem;
   border-radius: 50%; border: 1px solid rgba(220,188,112,.8); background: rgba(4,5,12,.7);
@@ -310,7 +335,22 @@ h4 { margin: 0 0 .35rem; font: 400 1.15rem/1.3 var(--serif); color: var(--gold);
   border-left: 1.1rem solid var(--gold); border-top: .7rem solid transparent; border-bottom: .7rem solid transparent;
 }
 .yt:hover img, .yt:focus-visible img { opacity: 1; }
-.yt-frame { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 10px; background: #000; }
+.yt-player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; }
+
+/* full-size viewer */
+.viewer { position: fixed; inset: 0; z-index: 100; overflow: auto; background: #000; cursor: zoom-out; -webkit-overflow-scrolling: touch; }
+.viewer img { max-width: none; width: auto; height: auto; margin: 0 auto; border: 0; border-radius: 0; cursor: zoom-out; }
+html.lock { overflow: hidden; }
+
+/* failed picture / video */
+.broken { padding: 1rem 1.1rem; border: 1px dashed var(--line-strong); border-radius: 10px; color: var(--muted); font-size: .9rem; }
+.broken p { margin: 0 0 .7rem; }
+.broken-row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+.btn-mini {
+  padding: .35rem .9rem; border-radius: 99px; border: 1px solid var(--line-strong);
+  background: var(--surface); color: var(--ink); font: inherit; font-size: .85rem; cursor: pointer;
+}
+.btn-mini:hover { border-color: var(--gold); }
 
 .foot { padding: 3rem 1rem 3rem; text-align: center; color: var(--muted); font-size: .78rem; letter-spacing: .1em; text-transform: uppercase; border-top: 1px solid var(--line); margin-top: 3rem; }
 .foot p { margin: 0; }
@@ -320,6 +360,8 @@ h4 { margin: 0 0 .35rem; font: 400 1.15rem/1.3 var(--serif); color: var(--gold);
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
+  .ph::after { animation: none; }
+  .ph img.hq { transition: none; }
   .hero { animation: none; }
 }
 @media (hover: hover) {
