@@ -7,6 +7,13 @@
   const avatarEl = document.querySelector('.avatar img');
   const AVATAR = avatarEl ? avatarEl.src : '';
 
+  // Open the connections to the image hosts now, before the first photo is requested.
+  ['https://cdn.jsdelivr.net', 'https://raw.githubusercontent.com'].forEach((h) => {
+    const l = document.createElement('link');
+    l.rel = 'preconnect'; l.href = h; l.crossOrigin = '';
+    document.head.append(l);
+  });
+
   /* ---------- 1. split the file into posts ---------- */
   // Posts are written like this, newest first:
   //   -
@@ -50,8 +57,8 @@
   // Backup addresses for the same GitHub file, tried in order if the first fails.
   function mirrors(u, d) {
     const list = [d.href];
-    const m = d.hostname === 'raw.githubusercontent.com' && d.pathname.match(/^\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/);
-    if (m) list.push(`https://cdn.jsdelivr.net/gh/${m[1]}/${m[2]}@${m[3]}/${m[4]}`);
+    const m = d.hostname === 'raw.githubusercontent.com' && d.pathname.replace(/^(\/[^/]+\/[^/]+)\/refs\/heads\//, '$1/').match(/^\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/);
+    if (m) list.unshift(`https://cdn.jsdelivr.net/gh/${m[1]}/${m[2]}@${m[3]}/${m[4]}`);   // CDN first: much faster
     return list;
   }
 
@@ -105,10 +112,62 @@
     return n;
   }
 
+  // Starts the first address; if it errors, or has not answered in 2.5 s, starts the next one too.
+  // Whichever finishes first is shown, so a slow host never holds the picture back.
+  function loadFirst(img, srcs, onFail) {
+    let next = 0, failed = 0, done = false, timer = 0;
+    const start = () => {
+      if (done || next >= srcs.length) return;
+      const src = srcs[next++];
+      const probe = new Image();
+      probe.decoding = 'async';
+      probe.onload = () => {
+        if (done) return;
+        done = true; clearTimeout(timer);
+        img.src = src;
+        img.classList.remove('pending');
+      };
+      probe.onerror = () => {
+        if (done) return;
+        failed++;
+        clearTimeout(timer);
+        if (failed >= srcs.length) { done = true; onFail(); } else start();
+      };
+      probe.src = src;
+      clearTimeout(timer);
+      if (next < srcs.length) timer = setTimeout(start, 2500);
+    };
+    start();
+  }
+
+  // Begin loading a picture when it is within about two screens of the viewport (like lazy loading, but earlier).
+  const io = 'IntersectionObserver' in window
+    ? new IntersectionObserver((entries) => {
+        entries.forEach((e) => {
+          if (!e.isIntersecting) return;
+          io.unobserve(e.target);
+          e.target._go();
+        });
+      }, { rootMargin: '1800px 0px' })
+    : null;
+  function watch(img, go) {
+    if (io) { img._go = go; io.observe(img); } else go();
+  }
+
   function brokenLink(node, m, what) {   // broken link: show a plain link instead of a gap
     const a = el('a', '', what + ' could not be loaded (the file must be in a PUBLIC repo). Open the link.');
     a.href = m.page || m.src; a.target = '_blank'; a.rel = 'noopener noreferrer';
     node.replaceWith(a);
+  }
+
+  // Tap a photo to see it at its true full size. Scroll or drag to move around; tap to close.
+  function openFull(src, alt) {
+    const box = el('div', 'viewer');
+    const big = el('img');
+    big.src = src; big.alt = alt;
+    box.append(big);
+    box.addEventListener('click', () => box.remove());
+    document.body.append(box);
   }
 
   function buildVideo(m) {
@@ -128,18 +187,16 @@
 
   function buildMedia(m) {
     if (m.type === 'img') {
-      const img = el('img');
-      img.src = m.src;
+      const img = el('img', 'pending');
       img.alt = m.alt || 'Image shared in this transmission';
-      img.loading = 'lazy';
       img.decoding = 'async';
       const srcs = m.srcs || [m.src];
-      let i = 0;
-      img.addEventListener('error', () => {
-        if (++i < srcs.length) { img.src = srcs[i]; return; }   // try the backup address
-        if (m.maybeVideo) img.replaceWith(buildVideo(m));       // GitHub upload links can be videos
+      const go = () => loadFirst(img, srcs, () => {
+        if (m.maybeVideo) img.replaceWith(buildVideo(m));   // GitHub upload links can be videos
         else brokenLink(img, m, 'Image');
       });
+      img.addEventListener('click', () => { if (!img.classList.contains('pending')) openFull(img.src, img.alt); });
+      watch(img, go);
       return img;
     }
     if (m.type === 'video') return buildVideo(m);
