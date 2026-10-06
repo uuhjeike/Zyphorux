@@ -47,6 +47,14 @@
     return u;
   }
 
+  // Backup addresses for the same GitHub file, tried in order if the first fails.
+  function mirrors(u, d) {
+    const list = [d.href];
+    const m = d.hostname === 'raw.githubusercontent.com' && d.pathname.match(/^\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/);
+    if (m) list.push(`https://cdn.jsdelivr.net/gh/${m[1]}/${m[2]}@${m[3]}/${m[4]}`);
+    return list;
+  }
+
   function youtubeId(u) {
     const host = u.hostname.replace(/^(www|m|music)\./, '');
     let id = null;
@@ -84,9 +92,9 @@
 
     const d = directUrl(u);
     const isAttachment = u.hostname === 'github.com' && u.pathname.startsWith('/user-attachments/assets/');
-    if (VID_EXT.test(d.pathname)) return { type: 'video', src: d.href, page: url };
-    if (IMG_EXT.test(d.pathname) || md) return { type: 'img', src: d.href, alt, page: url };
-    if (isAttachment) return { type: 'img', src: d.href, alt, page: url, maybeVideo: true };
+    if (VID_EXT.test(d.pathname)) return { type: 'video', src: d.href, srcs: mirrors(u, d), page: url };
+    if (IMG_EXT.test(d.pathname) || md) return { type: 'img', src: d.href, srcs: mirrors(u, d), alt, page: url };
+    if (isAttachment) return { type: 'img', src: d.href, srcs: [d.href], alt, page: url, maybeVideo: true };
     return null;
   }
 
@@ -98,7 +106,7 @@
   }
 
   function brokenLink(node, m, what) {   // broken link: show a plain link instead of a gap
-    const a = el('a', '', what + ' could not be loaded. Open the link.');
+    const a = el('a', '', what + ' could not be loaded (the file must be in a PUBLIC repo). Open the link.');
     a.href = m.page || m.src; a.target = '_blank'; a.rel = 'noopener noreferrer';
     node.replaceWith(a);
   }
@@ -108,8 +116,13 @@
     v.controls = true;
     v.preload = 'metadata';          // loads the first frame and the size, not the whole file
     v.playsInline = true;
-    v.src = m.src + '#t=0.1';        // makes phones show a first-frame preview
-    v.addEventListener('error', () => brokenLink(v, m, 'Video'), { once: true });
+    const srcs = m.srcs || [m.src];
+    let i = 0;
+    v.src = srcs[0] + '#t=0.1';      // makes phones show a first-frame preview
+    v.addEventListener('error', () => {
+      if (++i < srcs.length) { v.src = srcs[i] + '#t=0.1'; v.load(); }
+      else brokenLink(v, m, 'Video');
+    });
     return v;
   }
 
@@ -120,10 +133,13 @@
       img.alt = m.alt || 'Image shared in this transmission';
       img.loading = 'lazy';
       img.decoding = 'async';
+      const srcs = m.srcs || [m.src];
+      let i = 0;
       img.addEventListener('error', () => {
-        if (m.maybeVideo) img.replaceWith(buildVideo(m));   // GitHub upload links can be videos
+        if (++i < srcs.length) { img.src = srcs[i]; return; }   // try the backup address
+        if (m.maybeVideo) img.replaceWith(buildVideo(m));       // GitHub upload links can be videos
         else brokenLink(img, m, 'Image');
-      }, { once: true });
+      });
       return img;
     }
     if (m.type === 'video') return buildVideo(m);
