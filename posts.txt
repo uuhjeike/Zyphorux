@@ -1,4 +1,5 @@
 -
+100x 10tb HDD
 -
 Yes. What you're describing is possible, but there is an important distinction: no normal storage medium can guarantee that a photo will remain readable forever. You can, however, choose media designed for very long-term, offline preservation.
 
