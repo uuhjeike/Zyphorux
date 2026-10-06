@@ -286,9 +286,11 @@ h4 { margin: 0 0 .35rem; font: 400 1.15rem/1.3 var(--serif); color: var(--gold);
 .media.multi { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 .media:last-child { margin-bottom: 0; }
 .media img, .media video {
-  width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); background: #080a1a;
+  /* original size: never stretched, only shrunk when the screen is narrower than the file */
+  width: auto; max-width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); background: #080a1a;
 }
-.media.multi img { height: 100%; object-fit: cover; aspect-ratio: 4 / 3; }
+.media video { min-width: min(100%, 320px); }
+.media.multi img { width: 100%; height: 100%; object-fit: cover; aspect-ratio: 4 / 3; }
 
 .yt {
   position: relative; display: block; width: 100%; padding: 0; border: 1px solid var(--line); border-radius: 10px;

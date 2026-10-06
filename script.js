@@ -37,7 +37,8 @@
   const VID_EXT = /\.(mp4|webm|ogv)$/i;
 
   // Normal GitHub page links become direct file links:
-  // github.com/user/repo/blob/main/pic.png  ->  raw.githubusercontent.com/user/repo/main/pic.png
+  // github.com/user/repo/blob/main/My%20Folder/pic.jpg  ->  raw.githubusercontent.com/user/repo/main/My%20Folder/pic.jpg
+  // Also handles /raw/ links and folders or file names that contain spaces.
   function directUrl(u) {
     if (u.hostname === 'github.com' || u.hostname === 'www.github.com') {
       const m = u.pathname.match(/^\/([^/]+)\/([^/]+)\/(?:blob|raw)\/(.+)$/);
@@ -83,8 +84,9 @@
 
     const d = directUrl(u);
     const isAttachment = u.hostname === 'github.com' && u.pathname.startsWith('/user-attachments/assets/');
-    if (IMG_EXT.test(d.pathname) || isAttachment || md) return { type: 'img', src: d.href, alt, page: url };
-    if (VID_EXT.test(d.pathname)) return { type: 'video', src: d.href };
+    if (VID_EXT.test(d.pathname)) return { type: 'video', src: d.href, page: url };
+    if (IMG_EXT.test(d.pathname) || md) return { type: 'img', src: d.href, alt, page: url };
+    if (isAttachment) return { type: 'img', src: d.href, alt, page: url, maybeVideo: true };
     return null;
   }
 
@@ -95,6 +97,22 @@
     return n;
   }
 
+  function brokenLink(node, m, what) {   // broken link: show a plain link instead of a gap
+    const a = el('a', '', what + ' could not be loaded. Open the link.');
+    a.href = m.page || m.src; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    node.replaceWith(a);
+  }
+
+  function buildVideo(m) {
+    const v = el('video');
+    v.controls = true;
+    v.preload = 'metadata';          // loads the first frame and the size, not the whole file
+    v.playsInline = true;
+    v.src = m.src + '#t=0.1';        // makes phones show a first-frame preview
+    v.addEventListener('error', () => brokenLink(v, m, 'Video'), { once: true });
+    return v;
+  }
+
   function buildMedia(m) {
     if (m.type === 'img') {
       const img = el('img');
@@ -102,18 +120,13 @@
       img.alt = m.alt || 'Image shared in this transmission';
       img.loading = 'lazy';
       img.decoding = 'async';
-      img.addEventListener('error', () => {   // broken link: show a plain link instead of a gap
-        const a = el('a', '', 'Image could not be loaded. Open the link.');
-        a.href = m.page; a.target = '_blank'; a.rel = 'noopener noreferrer';
-        img.replaceWith(a);
+      img.addEventListener('error', () => {
+        if (m.maybeVideo) img.replaceWith(buildVideo(m));   // GitHub upload links can be videos
+        else brokenLink(img, m, 'Image');
       }, { once: true });
       return img;
     }
-    if (m.type === 'video') {
-      const v = el('video');
-      v.src = m.src; v.controls = true; v.preload = 'none'; v.playsInline = true;
-      return v;
-    }
+    if (m.type === 'video') return buildVideo(m);
     // YouTube: a still thumbnail now, the real player only after a tap (keeps the page light).
     const btn = el('button', 'yt');
     btn.type = 'button';
